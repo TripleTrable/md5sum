@@ -1,2 +1,2 @@
 # md5sum
-md5sum (rfc1321) in Haskell 
+md5sum ([RFC1321](rfc1321.txt)) in Haskell
