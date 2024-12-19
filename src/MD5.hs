@@ -3,6 +3,9 @@ module MD5 where
 import Data.WideWord
 import Data.Binary.Get
 import qualified Data.ByteString.Lazy as LB
+import Data.Binary (Word32)
+import qualified Data.ByteString.Char8 as B
+import Data.Binary.Put (runPut)
 
 
 tableK :: Int -> Int
@@ -34,13 +37,34 @@ tableS i = [
 
 
 -- md5sum :: LB.ByteString -> Int128
--- md5sum dat = do
---     chunk <- getLazyByteString 64
+-- md5sum dat = md5sumInt dat
 
-md5sum2 :: LB.ByteString -> IO ()
-md5sum2 dat = do
-    chunk <- getLazyByteString 64
-    print chunk
+funcF, funcG, funcH, funcI :: Word32 -> Word32 -> Word32 -> Word32
+
+funcF b c d = (b .&. c) .|.  ((complement b) .&. d)
+funcG b c d = (b .&. d) .|.  ((complement c) .&. d)
+funcH b c d = b `xor` c `xor` d
+funcI b c d = c `xor` (b .|. (complement d))
+
+data MD5Data = MD5Data
+    {
+     a:: !Word32
+    ,b:: !Word32
+    ,c:: !Word32
+    ,d:: !Word32
+    }
+
+(<>) :: MD5Data -> LB.ByteString -> MD5Data
+infixl 6 <>
+md5@(MD5Data a b c d) <> bs = 
+    
+
+
+md5sumInt :: LB.ByteString -> IO ()
+md5sumInt dat = do
+    let chunk = getLazyByteString 64
+    LB.putStr $ runGet chunk 
+    return ()
     
     
 
