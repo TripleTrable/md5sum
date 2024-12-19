@@ -34,6 +34,7 @@ main = handleParams =<< execParser params
 sumFile :: String -> IO ()
 sumFile path = do
     fileContent <- LB.readFile path
+    print fileContent
     putStrLn $  show (md5sum fileContent) ++ " " ++ path
 
 handleParams :: Opts -> IO ()
@@ -44,6 +45,7 @@ handleParams (Opts _ c ta t z checkFileList) = do
     print z
     Control.Monad.when c $ checkFlag checkFileList
     mapM_ sumFile checkFileList
-    
+
+
 
 

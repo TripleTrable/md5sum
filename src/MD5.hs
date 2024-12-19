@@ -1,14 +1,19 @@
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 module MD5 where
 
-import Data.WideWord
 import Data.Binary.Get
 import qualified Data.ByteString.Lazy as LB
 import Data.Binary (Word32)
-import qualified Data.ByteString.Char8 as B
-import Data.Binary.Put (runPut)
+import Data.Bits
+import GHC.Arr (listArray, Array, (!))
+import Control.Monad (replicateM)
+import GHC.List (foldl')
+import Data.Binary.Put 
+import Numeric (showHex)
+import Data.Int (Int64)
 
 
-tableK :: Int -> Int
+tableK :: Int -> Word32
 -- Prec computed table for integer parts of sines: floor(232 × abs(sin(i + 1)))
 tableK i = [
  0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee ,
@@ -35,16 +40,20 @@ tableS i = [
  4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23 ,
  6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21 ] !! i
 
+tableG :: Int -> Int
+tableG i = [
+ 7, 12, 17, 22,  7, 12, 17, 22,  7, 12, 17, 22,  7, 12, 17, 22 ,
+ 5,  9, 14, 20,  5,  9, 14, 20,  5,  9, 14, 20,  5,  9, 14, 20 ,
+ 4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23 ,
+ 6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21 ] !! i
 
--- md5sum :: LB.ByteString -> Int128
--- md5sum dat = md5sumInt dat
 
 funcF, funcG, funcH, funcI :: Word32 -> Word32 -> Word32 -> Word32
 
-funcF b c d = (b .&. c) .|.  ((complement b) .&. d)
-funcG b c d = (b .&. d) .|.  ((complement c) .&. d)
+funcF b c d = (b .&. c) .|.  (complement b .&. d)
+funcG b c d = (b .&. d) .|.  (complement c .&. d)
 funcH b c d = b `xor` c `xor` d
-funcI b c d = c `xor` (b .|. (complement d))
+funcI b c d = c `xor` (b .|. complement d)
 
 data MD5Data = MD5Data
     {
@@ -54,17 +63,83 @@ data MD5Data = MD5Data
     ,d:: !Word32
     }
 
-(<>) :: MD5Data -> LB.ByteString -> MD5Data
-infixl 6 <>
-md5@(MD5Data a b c d) <> bs = 
-    
+(<+>) :: MD5Data -> LB.ByteString -> MD5Data
+infixl 6 <+>
+md5@(MD5Data a b c d) <+> byteString =
+    let newDat = listArray (0,15) $ replicateM 16 getWord32le `runGet` byteString -- create array 
+                                                                        -- M from wikipedia example
+        MD5Data a' b' c' d' = foldl' (md5iteration newDat) md5 [0 .. 63] -- [1..64] is just an 
+                                        -- ascending array to run md5iteration
+                                        -- 64 times. (verry dirty for loop)
+    in MD5Data (a+a') (b+b') (c+c') (d+d')
+
+md5iteration :: Array Int Word32 -> MD5Data -> Int -> MD5Data
+md5iteration newData (MD5Data a b c d) i =
+    MD5Data d a' b c
+        where a' = b + rotateL (f b c d + a + tableK i + (newData ! g) )  (tableS i)
+              g | i < 16 = i
+                | i < 32 = (5 * i + 1) `mod` 16
+                | i < 48 = (3 * i + 5) `mod` 16
+                | otherwise = (7 * i) `mod` 16
+
+              f b c d | i < 16 = funcF  b c d
+                      | i < 32 = funcG  b c d
+                      | i < 48 = funcH  b c d
+                      | otherwise = funcI  b c d
+
+md5sum :: LB.ByteString -> String
+md5sum dat = 
+    let MD5Data a b c d = runGet (md5sumInt start) dat
+    in  foldr convToHex [] . LB.unpack . runPut $ mapM_ putWord32le [a,b,c,d]
+    where 
+        start = MD5Data  0x67452301 0xEFCDAB89 0x98BADCFE 0x10325476
+        convToHex x s  | x < 16 = '0': showHex x s
+                       | otherwise =   showHex x s
+
+-- copied from Data.Binary.Get.internal as the failOnEOF must not happen. 
+getLazyByteString' :: Int64 -> Get LB.ByteString
+getLazyByteString' n = do
+    S s ss bytes <- get
+    let big = s `join` ss
+    case splitAtST n big of
+      (consume, rest) -> do put $ mkState rest (bytes + n)
+                            return consume
+
+md5sumInt :: MD5Data -> Get MD5Data
+md5sumInt mdData = do
+    chunk <- getLazyByteString 64
+    let chunkLength = LB.length chunk
+
+    if chunkLength == 64 then
+        -- if we got here, this means we read a full chunk from the file. Now we
+        -- can apply the the chunk of data to our md5 data object using the <+>
+        -- operator and call this function recursivle using $! to force
+        -- evaluation of the <+>
+        md5sumInt $! mdData <+> chunk
 
 
-md5sumInt :: LB.ByteString -> IO ()
-md5sumInt dat = do
-    let chunk = getLazyByteString 64
-    LB.putStr $ runGet chunk 
-    return ()
-    
-    
+    else do
+        bytes <- bytesRead
+        let originalDataLength = runPut . putWord64le $ fromIntegral (bytes - 64 + chunkLength) * 8
+                -- converts the number of bytes into word64 and than uses put...
+                -- and runPut to convert the number into a byteString for later
+                -- processing
+            padding len = LB.append chunk (LB.cons 0x80 (LB.replicate (len - 1) 0x00))
+
+        return $
+            if chunkLength > 55 then
+                -- if more than 54 bytes are left, this means the original
+                -- length does not fit into the chunk. To fix this, we fill to
+                -- full 64 byte alignment and than add 56 times bytes with zero
+                mdData <+> padding (64 - chunkLength) <+> LB.replicate 56 0x00 `LB.append` originalDataLength 
+            else
+                -- this means the length of the original message fits and we
+                -- just padd to 56 byte chunk length
+                mdData <+> padding (56 - chunkLength) `LB.append` originalDataLength
+
+
+
+
+
+
 
