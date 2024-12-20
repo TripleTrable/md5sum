@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wno-name-shadowing #-}
 module MD5 where
 
 import Data.Binary.Get
@@ -8,7 +7,7 @@ import Data.Bits
 import GHC.Arr (listArray, Array, (!))
 import Control.Monad (replicateM)
 import GHC.List (foldl')
-import Data.Binary.Put 
+import Data.Binary.Put
 import Numeric (showHex)
 import Data.Int (Int64)
 
@@ -50,96 +49,102 @@ tableG i = [
 
 funcF, funcG, funcH, funcI :: Word32 -> Word32 -> Word32 -> Word32
 
-funcF b c d = (b .&. c) .|.  (complement b .&. d)
-funcG b c d = (b .&. d) .|.  (complement c .&. d)
-funcH b c d = b `xor` c `xor` d
-funcI b c d = c `xor` (b .|. complement d)
+funcF b_ c_ d_ = (b_ .&. c_) .|.  (complement b_ .&. d_)
+funcG b_ c_ d_ = (b_ .&. d_) .|.  (complement c_ .&. d_)
+funcH b_ c_ d_ = b_ `xor` c_ `xor` d_
+funcI b_ c_ d_ = c_ `xor` (b_ .|. complement d_)
 
 data MD5Data = MD5Data
     {
-     a:: !Word32
-    ,b:: !Word32
-    ,c:: !Word32
-    ,d:: !Word32
+      a :: {-# UNPACK #-} !Word32
+    , b :: {-# UNPACK #-} !Word32
+    , c :: {-# UNPACK #-} !Word32
+    , d :: {-# UNPACK #-} !Word32
     }
 
 (<+>) :: MD5Data -> LB.ByteString -> MD5Data
 infixl 6 <+>
-md5@(MD5Data a b c d) <+> byteString =
+md5@(MD5Data a_ b_ c_ d_) <+> byteString =
     let newDat = listArray (0,15) $ replicateM 16 getWord32le `runGet` byteString -- create array 
                                                                         -- M from wikipedia example
         MD5Data a' b' c' d' = foldl' (md5iteration newDat) md5 [0 .. 63] -- [1..64] is just an 
                                         -- ascending array to run md5iteration
                                         -- 64 times. (verry dirty for loop)
-    in MD5Data (a+a') (b+b') (c+c') (d+d')
+    in MD5Data (a_+a') (b_+b') (c_+c') (d_+d')
 
 md5iteration :: Array Int Word32 -> MD5Data -> Int -> MD5Data
-md5iteration newData (MD5Data a b c d) i =
-    MD5Data d a' b c
-        where a' = b + rotateL (f b c d + a + tableK i + (newData ! g) )  (tableS i)
+md5iteration newData (MD5Data a_ b_ c_ d_) i =
+    MD5Data d_ a' b_ c_
+        where a' = b_ + rotateL (f b_ c_ d_ + a_ + tableK i + (newData ! g) )  (tableS i)
               g | i < 16 = i
                 | i < 32 = (5 * i + 1) `mod` 16
                 | i < 48 = (3 * i + 5) `mod` 16
                 | otherwise = (7 * i) `mod` 16
 
-              f b c d | i < 16 = funcF  b c d
-                      | i < 32 = funcG  b c d
-                      | i < 48 = funcH  b c d
-                      | otherwise = funcI  b c d
+              f b__ c__ d__ | i < 16 = funcF  b__ c__ d__
+                            | i < 32 = funcG  b__ c__ d__
+                            | i < 48 = funcH  b__ c__ d__
+                            | otherwise = funcI  b__ c__ d__
 
 md5sum :: LB.ByteString -> String
-md5sum dat = 
-    let MD5Data a b c d = runGet (md5sumInt start) dat
-    in  foldr convToHex [] . LB.unpack . runPut $ mapM_ putWord32le [a,b,c,d]
-    where 
+md5sum dat =
+    let MD5Data a_ b_ c_ d_ = runGet (md5sumInt start) dat
+    in  foldr convToHex [] . LB.unpack . runPut $ mapM_ putWord32le [a_,b_,c_,d_]
+    where
         start = MD5Data  0x67452301 0xEFCDAB89 0x98BADCFE 0x10325476
         convToHex x s  | x < 16 = '0': showHex x s
                        | otherwise =   showHex x s
 
--- copied from Data.Binary.Get.internal as the failOnEOF must not happen. 
-getLazyByteString' :: Int64 -> Get LB.ByteString
-getLazyByteString' n = do
-    S s ss bytes <- get
-    let big = s `join` ss
-    case splitAtST n big of
-      (consume, rest) -> do put $ mkState rest (bytes + n)
-                            return consume
+
+remainingBytes :: Get Int
+remainingBytes = do
+  fromIntegral . LB.length <$> getRemainingLazyByteString
+
+-- Helper to handle getLazyByteString failures
+getLazyByteStringWithFallback :: Int -> Get (Either LB.ByteString LB.ByteString)
+getLazyByteStringWithFallback n = do
+    let size = fromIntegral n
+    tryGetLazyByteString size `catchFail` handleFailure
+  where
+    handleFailure :: Get (Either LB.ByteString LB.ByteString)
+    handleFailure = Left <$> getRemainingLazyByteString
+
+-- Attempt to read bytes with getLazyByteString and capture success
+tryGetLazyByteString :: Int64 -> Get (Either LB.ByteString LB.ByteString)
+tryGetLazyByteString size = do
+    chunk <- getLazyByteString size
+    return (Right chunk)
+
+-- Generic failure handler for Get actions
+catchFail :: Get (Either LB.ByteString LB.ByteString) -> Get (Either LB.ByteString LB.ByteString) -> Get (Either LB.ByteString LB.ByteString)
+catchFail action fallback = do
+    remain <- isEmpty
+    if remain then fallback else action
+
+
 
 md5sumInt :: MD5Data -> Get MD5Data
 md5sumInt mdData = do
-    chunk <- getLazyByteString 64
-    let chunkLength = LB.length chunk
+    result <- getLazyByteStringWithFallback 64
+    case result of 
+        Right chunk -> md5sumInt $! mdData <+> chunk
+        Left remain ->
+            do
+                bytes <- bytesRead
+                let chunkLength = LB.length remain
+                let originalDataLength = runPut . putWord64le $ fromIntegral (bytes - 64 + chunkLength) * 8
+                        -- converts the number of bytes into word64 and than uses put...
+                        -- and runPut to convert the number into a byteString for later
+                        -- processing
+                    padding len = LB.append remain (LB.cons 0x80 (LB.replicate (len - 1) 0x00))
 
-    if chunkLength == 64 then
-        -- if we got here, this means we read a full chunk from the file. Now we
-        -- can apply the the chunk of data to our md5 data object using the <+>
-        -- operator and call this function recursivle using $! to force
-        -- evaluation of the <+>
-        md5sumInt $! mdData <+> chunk
-
-
-    else do
-        bytes <- bytesRead
-        let originalDataLength = runPut . putWord64le $ fromIntegral (bytes - 64 + chunkLength) * 8
-                -- converts the number of bytes into word64 and than uses put...
-                -- and runPut to convert the number into a byteString for later
-                -- processing
-            padding len = LB.append chunk (LB.cons 0x80 (LB.replicate (len - 1) 0x00))
-
-        return $
-            if chunkLength > 55 then
-                -- if more than 54 bytes are left, this means the original
-                -- length does not fit into the chunk. To fix this, we fill to
-                -- full 64 byte alignment and than add 56 times bytes with zero
-                mdData <+> padding (64 - chunkLength) <+> LB.replicate 56 0x00 `LB.append` originalDataLength 
-            else
-                -- this means the length of the original message fits and we
-                -- just padd to 56 byte chunk length
-                mdData <+> padding (56 - chunkLength) `LB.append` originalDataLength
-
-
-
-
-
-
-
+                return $
+                    if chunkLength > 55 then
+                        -- if more than 54 bytes are left, this means the original
+                        -- length does not fit into the chunk. To fix this, we fill to
+                        -- full 64 byte alignment and than add 56 times bytes with zero
+                        mdData <+> padding (64 - chunkLength) <+> LB.replicate 56 0x00 `LB.append` originalDataLength
+                    else
+                        -- this means the length of the original message fits and we
+                        -- just padd to 56 byte chunk length
+                        mdData <+> padding (56 - chunkLength) `LB.append` originalDataLength
