@@ -9,7 +9,6 @@ import Control.Monad (replicateM)
 import GHC.List (foldl')
 import Data.Binary.Put
 import Numeric (showHex)
-import Data.Int (Int64)
 
 
 tableK :: Int -> Word32
@@ -98,53 +97,40 @@ md5sum dat =
 
 remainingBytes :: Get Int
 remainingBytes = do
-  fromIntegral . LB.length <$> getRemainingLazyByteString
-
--- Helper to handle getLazyByteString failures
-getLazyByteStringWithFallback :: Int -> Get (Either LB.ByteString LB.ByteString)
-getLazyByteStringWithFallback n = do
-    let size = fromIntegral n
-    tryGetLazyByteString size `catchFail` handleFailure
-  where
-    handleFailure :: Get (Either LB.ByteString LB.ByteString)
-    handleFailure = Left <$> getRemainingLazyByteString
-
--- Attempt to read bytes with getLazyByteString and capture success
-tryGetLazyByteString :: Int64 -> Get (Either LB.ByteString LB.ByteString)
-tryGetLazyByteString size = do
-    chunk <- getLazyByteString size
-    return (Right chunk)
-
--- Generic failure handler for Get actions
-catchFail :: Get (Either LB.ByteString LB.ByteString) -> Get (Either LB.ByteString LB.ByteString) -> Get (Either LB.ByteString LB.ByteString)
-catchFail action fallback = do
-    remain <- isEmpty
-    if remain then fallback else action
-
-
+  fromIntegral . LB.length <$> lookAhead getRemainingLazyByteString
 
 md5sumInt :: MD5Data -> Get MD5Data
 md5sumInt mdData = do
-    result <- getLazyByteStringWithFallback 64
-    case result of 
-        Right chunk -> md5sumInt $! mdData <+> chunk
-        Left remain ->
-            do
-                bytes <- bytesRead
-                let chunkLength = LB.length remain
-                let originalDataLength = runPut . putWord64le $ fromIntegral (bytes - 64 + chunkLength) * 8
-                        -- converts the number of bytes into word64 and than uses put...
-                        -- and runPut to convert the number into a byteString for later
-                        -- processing
-                    padding len = LB.append remain (LB.cons 0x80 (LB.replicate (len - 1) 0x00))
+    remainingB <- remainingBytes
+    chunk <- if remainingB  >= 64 then
+            getLazyByteString 64
+        else
+            getRemainingLazyByteString
+    let chunkLength = LB.length chunk
 
-                return $
-                    if chunkLength > 55 then
-                        -- if more than 54 bytes are left, this means the original
-                        -- length does not fit into the chunk. To fix this, we fill to
-                        -- full 64 byte alignment and than add 56 times bytes with zero
-                        mdData <+> padding (64 - chunkLength) <+> LB.replicate 56 0x00 `LB.append` originalDataLength
-                    else
-                        -- this means the length of the original message fits and we
-                        -- just padd to 56 byte chunk length
-                        mdData <+> padding (56 - chunkLength) `LB.append` originalDataLength
+    if chunkLength == 64 then
+        -- if we got here, this means we read a full chunk from the file. Now we
+        -- can apply the the chunk of data to our md5 data object using the <+>
+        -- operator and call this function recursivle using $! to force
+        -- evaluation of the <+>
+        md5sumInt $! mdData <+> chunk
+
+
+    else do
+        bytes <- bytesRead
+        let originalDataLength = runPut . putWord64le $ fromIntegral (bytes - 64 + chunkLength) * 8
+                -- converts the number of bytes into word64 and than uses put...
+                -- and runPut to convert the number into a byteString for later
+                -- processing
+            padding len = LB.append chunk (LB.cons 0x80 (LB.replicate (len - 1) 0x00))
+
+        return $
+            if chunkLength > 55 then
+                -- if more than 54 bytes are left, this means the original
+                -- length does not fit into the chunk. To fix this, we fill to
+                -- full 64 byte alignment and than add 56 times bytes with zero
+                mdData <+> padding (64 - chunkLength) <+> LB.replicate 56 0x00 `LB.append` originalDataLength
+            else
+                -- this means the length of the original message fits and we
+                -- just padd to 56 byte chunk length
+                mdData <+> padding (56 - chunkLength) `LB.append` originalDataLength
