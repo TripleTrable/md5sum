@@ -27,10 +27,25 @@ foo.bar: OK
     
 ## Inner workings
 
-
+### overview of the program flow
 ![Flow diagram of md5sum](./images/function-flow.png)
-![md5sum Algorithm of one round](./images/md5algo.svg)
-![md5sum Algorithm Overview](./images/md5algo1.jpg)
+
+
+### MD5 algorithm overview
+![md5sum Algorithm Overview (from geeksforgeeks)](./images/md5algo1.jpg)
+As seen from the above image, the md5 algorithm iterates over the message in 512
+bit chunks. Each chunk is then processed in a so-called round before beeing used
+again with a new chunk.
+
+### MD5 algorithm round calcuation
+![md5sum Algorithm of one round (from Wikipedia)](./images/md5algo.svg)
+The Algorithm uses 4 functions which are used on different rounds shown as
+```F``` inside the above diagram. After Adding the result of ```F``` onto Block
+```A```, the i'th part of the message chunk (```M_i```) as well as the constant
+```K_i``` are added to the ```A``` block as well. After the addition the
+resulting Block a is shuffeled by a constant each round. Now Block ```B``` is
+added onto Block ```A``` and the resulting 4 Blocks are rotated.
+*Note: All blocks are 32bit large, and the addition is Mod 2^32*
 
 ## References
 
