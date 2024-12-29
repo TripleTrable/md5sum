@@ -10,9 +10,7 @@ data Opts = Opts
     {
         binary :: Bool
         ,check :: Bool
-        ,tag :: Bool
         ,text :: Bool
-        ,zero :: Bool
         ,files :: [String]
     }
 
@@ -20,9 +18,7 @@ opts :: Parser Opts
 opts = Opts
     <$> switch (long "binary" <> short 'b' <> help "read in binary mode")
     <*> switch (long "check" <> short 'c' <> help "read checksums from the FILEs and check them")
-    <*> switch (long "tag" <>  help "create a BSD-style checksum")
     <*> switch (long "text" <> short 't' <> help "read in text mode (default)")
-    <*> switch (long "zero" <> short 'z' <> help "end each output line with NUL, not newline, and disable file name escaping")
     <*> some (argument str (metavar "FILES..."))
 
 main :: IO ()
@@ -34,17 +30,12 @@ main = handleParams =<< execParser params
 sumFile :: String -> IO ()
 sumFile path = do
     fileContent <- LB.readFile path
-    print fileContent
-    putStrLn $  show (md5sum fileContent) ++ " " ++ path
+    putStrLn $  md5sum fileContent ++ " " ++ path
 
 handleParams :: Opts -> IO ()
-handleParams (Opts _ c ta t z checkFileList) = do
-    putStrLn "foo"
-    print ta
-    print t
-    print z
+handleParams (Opts _ c _ checkFileList) = do -- we must incude binary and test but these can be ignored as these do nothing on unix systems
     Control.Monad.when c $ checkFlag checkFileList
-    mapM_ sumFile checkFileList
+    Control.Monad.unless c $ mapM_ sumFile checkFileList
 
 
 
