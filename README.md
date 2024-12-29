@@ -4,10 +4,8 @@ md5sum ([RFC1321](rfc1321.txt)) in Haskell
 
 ## To implement
 
-[ ] md5sum algorithm 
-[ ] cmd arguments
+[?] md5sum algorithm 
+[x] cmd arguments
     [x] -b, --binary (No difference on GNU systems)
-    [ ] -c, --check
-    [ ] --tag
+    [x] -c, --check
     [x] -t, --text
-    [ ] -z, --zero
