@@ -28,7 +28,7 @@ foo.bar: OK
 ## Inner workings
 
 
-![Flow diagram of md5sum](./images/function flow.png)
+![Flow diagram of md5sum](./images/function-flow.png)
 ![md5sum Algorithm of one round](./images/md5algo.svg)
 ![md5sum Algorithm Overview](./images/md5algo1.jpg)
 
