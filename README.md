@@ -3,6 +3,25 @@
 # md5sum
 md5sum ([RFC1321](rfc1321.txt)) in Haskell
 
+## Install
+
+To build use: 
+
+```bash
+$ cabal build
+```
+And to test run you can use:
+
+```bash
+$ cabal run -- <args>
+```
+
+To install use:
+
+```bash
+$ cabal install
+```
+
 
 ## Usage
 
