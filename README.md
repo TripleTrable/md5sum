@@ -21,6 +21,12 @@ To install use:
 $ cabal install
 ```
 
+## Unit tests
+
+To run unit tests run:
+```bash
+$ cabal test
+```
 
 ## Usage
 

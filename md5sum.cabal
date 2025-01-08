@@ -57,6 +57,17 @@ extra-doc-files:    CHANGELOG.md
 common warnings
     ghc-options: -Wall
 
+
+library md5-project
+    hs-source-dirs:      src
+    exposed-modules:     MD5,
+                         CheckFlag
+    build-depends:       base >=4.14 && <5,
+                         bytestring,
+                         binary
+    default-language:    Haskell2010
+
+
 executable md5sum
     -- Import common warning flags.
     import:           warnings
@@ -64,10 +75,6 @@ executable md5sum
     -- .hs or .lhs file containing the Main module.
     main-is:          Main.hs
 
-
-    -- Modules included in this executable, other than Main.
-    other-modules:    CheckFlag,
-                      MD5
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -77,11 +84,25 @@ executable md5sum
                       optparse-applicative,
                       wide-word,
                       bytestring,
-                      binary
+                      binary,
+                      md5-project
 
 
     -- Directories containing source files.
-    hs-source-dirs:   src
+    hs-source-dirs:   app
 
     -- Base language which the package is written in.
     default-language: Haskell2010
+
+
+test-suite md-tests
+    type:                exitcode-stdio-1.0
+    main-is:             MD5Tests.hs
+    hs-source-dirs:      tests
+    build-depends:       base >=4.14 && <5,
+                         HUnit >= 1.6,
+                         bytestring,
+                         binary,
+                         md5-project
+    default-language:    Haskell2010
+
