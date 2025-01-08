@@ -1,8 +1,3 @@
-# > [!WARNING]
-> Currently the calculated md5sum is wrong. I Could not find the bug in time and
-> priotised the rest as the algorithm works when comparing only the hashes it
-> has generated itself.
-
 # md5sum
 md5sum ([RFC1321](rfc1321.txt)) in Haskell
 This is part of a TH-Rosenheim module. The counterpart is located at https://github.com/TripleTrable/md5sum-go.git

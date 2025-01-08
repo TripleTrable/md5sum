@@ -38,18 +38,10 @@ tableS i = [
  4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23 ,
  6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21 ] !! i
 
-tableG :: Int -> Int
-tableG i = [
- 7, 12, 17, 22,  7, 12, 17, 22,  7, 12, 17, 22,  7, 12, 17, 22 ,
- 5,  9, 14, 20,  5,  9, 14, 20,  5,  9, 14, 20,  5,  9, 14, 20 ,
- 4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23,  4, 11, 16, 23 ,
- 6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21 ] !! i
-
-
 funcF, funcG, funcH, funcI :: Word32 -> Word32 -> Word32 -> Word32
 
 funcF b_ c_ d_ = (b_ .&. c_) .|.  (complement b_ .&. d_)
-funcG b_ c_ d_ = (b_ .&. d_) .|.  (complement c_ .&. d_)
+funcG b_ c_ d_ = (b_ .&. d_) .|.  (c_ .&. complement d_)
 funcH b_ c_ d_ = b_ `xor` c_ `xor` d_
 funcI b_ c_ d_ = c_ `xor` (b_ .|. complement d_)
 
@@ -71,18 +63,19 @@ md5@(MD5Data a_ b_ c_ d_) <+> byteString =
                                         -- 64 times. (verry dirty for loop)
     in MD5Data (a_+a') (b_+b') (c_+c') (d_+d')
 
+
 md5iteration :: Array Int Word32 -> MD5Data -> Int -> MD5Data
 md5iteration newData (MD5Data a_ b_ c_ d_) i =
     MD5Data d_ a' b_ c_
-        where a' = b_ + rotateL (f b_ c_ d_ + a_ + tableK i + (newData ! g) )  (tableS i)
+        where a' = (b_ + rotateL ((f b_ c_ d_ + a_ + tableK i + (newData ! g) ) .&. 0xFFFFFFFF)  (tableS i)) .&. 0xFFFFFFFF
               g | i < 16 = i
                 | i < 32 = (5 * i + 1) `mod` 16
                 | i < 48 = (3 * i + 5) `mod` 16
                 | otherwise = (7 * i) `mod` 16
 
-              f b__ c__ d__ | i < 16 = funcF  b__ c__ d__
-                            | i < 32 = funcG  b__ c__ d__
-                            | i < 48 = funcH  b__ c__ d__
+              f b__ c__ d__ | i >= 0 && i < 16 = funcF  b__ c__ d__
+                            | i >= 16 && i < 32 = funcG  b__ c__ d__
+                            | i >= 32 && i < 48 = funcH  b__ c__ d__
                             | otherwise = funcI  b__ c__ d__
 
 md5sum :: LB.ByteString -> String
@@ -118,7 +111,7 @@ md5sumInt mdData = do
 
     else do
         bytes <- bytesRead
-        let originalDataLength = runPut . putWord64le $ fromIntegral (bytes - 64 + chunkLength) * 8
+        let originalDataLength = runPut . putWord64le $ fromIntegral bytes * 8
                 -- converts the number of bytes into word64 and than uses put...
                 -- and runPut to convert the number into a byteString for later
                 -- processing
